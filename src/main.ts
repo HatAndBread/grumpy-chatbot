@@ -10,7 +10,7 @@ import './style.css';
 type Message = { role: 'system' | 'user' | 'assistant'; content: string };
 
 const template = (_: Template) => {
-  const functionCallingModelIds = [
+  const modelIds = [
     'Hermes-3-Llama-3.1-8B-q4f32_1-MLC',
     'Hermes-3-Llama-3.1-8B-q4f16_1-MLC',
     'Hermes-3-Llama-3.2-3B-q4f32_1-MLC',
@@ -20,12 +20,17 @@ const template = (_: Template) => {
     'SmolLM2-135M-Instruct-q0f16-MLC',
     'gemma-2-9b-it-q4f32_1-MLC',
     'Llama-2-13b-chat-hf-q4f16_1-MLC',
+    'gemma-2-2b-jpn-it-q4f32_1-MLC',
+    'Qwen3-8B-q4f16_1-MLC',
+    'Qwen3-8B-q4f32_1-MLC',
+    'stablelm-2-zephyr-1_6b-q4f32_1-MLC',
+    'RedPajama-INCITE-Chat-3B-v1-q4f32_1-MLC',
   ];
   const isLoadingText = (t: string | null) =>
     t ? t.toLowerCase().match(/loading/) : false;
   const isFinishedText = (t: string) => t.toLowerCase().match(/finish/);
   return _.component(({ state, ref, subscribe }) => {
-    const selectedModel = state<string>(functionCallingModelIds[0]);
+    const selectedModel = state<string>(modelIds[0]);
     const engine = state<MLCEngine | null>(null);
     const downloadProgress = state<number | null>(null);
     const progressExplanation = state<string | null>(null);
@@ -33,7 +38,10 @@ const template = (_: Template) => {
     const isLoading = state<boolean>(false);
     const systemThinking = state<boolean>(false);
     const showError = state<boolean>(false);
-    const systemPrompt = state<string>(window.localStorage.getItem('systemPrompt') || `You are a happy and cheerful assistant. Do not use emojis. Speak in the same language as the user.`);
+    const systemPrompt = state<string>(
+      window.localStorage.getItem('systemPrompt') ||
+        `You are a happy and cheerful assistant. Do not use emojis. Speak in the same language as the user.`
+    );
     const userInputRef = ref();
     const system: Message = {
       role: 'system',
@@ -45,9 +53,7 @@ const template = (_: Template) => {
       window.localStorage.setItem('systemPrompt', systemPrompt.value);
       system.content = systemPrompt.value;
       messages.value = [system, ...messages.value.slice(1)];
-    }, [
-      systemPrompt
-    ]);
+    }, [systemPrompt]);
 
     const handleModelChange = (e: Event) => {
       const target = e.target as HTMLSelectElement;
@@ -126,17 +132,22 @@ const template = (_: Template) => {
       },
       () => {
         _.h1({ text: '🤖', style: { textAlign: 'center' } });
-        _.p({
-          style: { textAlign: 'center' },
-        }, () => {
-          _.text(`This is an AI chatbot powered by `,)
-          _.a({
-            text: 'WebLLM',
-            href: 'https://webllm.mlc.ai/',
-            target: '_blank',
-          })
-          _.text(`. All models run directly in your browser, so no data is sent to the server. Larger models may struggle on some hardware. A powerful GPU is recommended. Try switching models and changing the system prompt to see how different models perform.`)
-        });
+        _.p(
+          {
+            style: { textAlign: 'center' },
+          },
+          () => {
+            _.text(`This is an AI chatbot powered by `);
+            _.a({
+              text: 'WebLLM',
+              href: 'https://webllm.mlc.ai/',
+              target: '_blank',
+            });
+            _.text(
+              `. All models run directly in your browser, so no data is sent to the server. Larger models may struggle on some hardware. A powerful GPU is recommended. Try switching models and changing the system prompt to see how different models perform.`
+            );
+          }
+        );
         _.div({ subscribe: showError }, () => {
           if (showError.value) {
             _.div(
@@ -161,23 +172,34 @@ const template = (_: Template) => {
             );
           }
         });
-        _.div({subscribe: systemPrompt}, () => {
-          _.label({text: 'System Prompt', style: {display: 'block', marginBottom: '10px', fontSize: '12px', fontWeight: 'bold'}})
-          _.textarea({
-            style: {width: '100%'},
-            type: 'text',
-            name: 'systemPrompt',
-            value: systemPrompt.value,
-            minHeight: '200px !important',
-            placeholder: 'System Prompt',
-            input: (e: Event) => {
-              const target = e.target as HTMLTextAreaElement;
-              systemPrompt.value = target.value;
+        _.div({ subscribe: systemPrompt }, () => {
+          _.label({
+            text: 'System Prompt',
+            style: {
+              display: 'block',
+              marginBottom: '10px',
+              fontSize: '12px',
+              fontWeight: 'bold',
             },
-          }, () => {
-            _.text(systemPrompt.value)
-          })
-        })
+          });
+          _.textarea(
+            {
+              style: { width: '100%' },
+              type: 'text',
+              name: 'systemPrompt',
+              value: systemPrompt.value,
+              minHeight: '200px !important',
+              placeholder: 'System Prompt',
+              input: (e: Event) => {
+                const target = e.target as HTMLTextAreaElement;
+                systemPrompt.value = target.value;
+              },
+            },
+            () => {
+              _.text(systemPrompt.value);
+            }
+          );
+        });
         _.div(
           {
             style: {
@@ -193,7 +215,7 @@ const template = (_: Template) => {
                 change: handleModelChange,
               },
               () => {
-                functionCallingModelIds.forEach((id) => {
+                modelIds.forEach((id) => {
                   _.option({ id: `${id}-option`, text: id });
                 });
               }
@@ -235,7 +257,7 @@ const template = (_: Template) => {
             }
           }
         );
-        _.div({ subscribe: modelLoaded, style: {marginTop: '16px'} }, () => {
+        _.div({ subscribe: modelLoaded, style: { marginTop: '16px' } }, () => {
           if (modelLoaded.value) {
             _.div({ style: { display: 'flex', width: '100%' } }, () => {
               _.div({ style: { width: '100%' }, subscribe: messages }, () => {
