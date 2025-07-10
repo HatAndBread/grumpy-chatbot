@@ -30,7 +30,9 @@ const template = (_: Template) => {
     t ? t.toLowerCase().match(/loading/) : false;
   const isFinishedText = (t: string) => t.toLowerCase().match(/finish/);
   return _.component(({ state, ref, subscribe }) => {
-    const selectedModel = state<string>(modelIds[0]);
+    const selectedModel = state<string>(
+      window.localStorage.getItem('selectedModel') || modelIds[0]
+    );
     const engine = state<MLCEngine | null>(null);
     const downloadProgress = state<number | null>(null);
     const progressExplanation = state<string | null>(null);
@@ -40,20 +42,33 @@ const template = (_: Template) => {
     const showError = state<boolean>(false);
     const systemPrompt = state<string>(
       window.localStorage.getItem('systemPrompt') ||
-        `You are a happy and cheerful assistant. Do not use emojis. Speak in the same language as the user.`
+        `You are a happy and cheerful assistant. Do not use emojis. Do not use markdown. Speak in the same language as the user.`
     );
     const userInputRef = ref();
     const system: Message = {
       role: 'system',
       content: systemPrompt.value,
     };
-    const messages = state<Message[]>([system]);
+    const messages = state<Message[]>(
+      window.localStorage.getItem('messages')
+        ? JSON.parse(window.localStorage.getItem('messages')!)
+        : [system]
+    );
 
     subscribe(() => {
       window.localStorage.setItem('systemPrompt', systemPrompt.value);
       system.content = systemPrompt.value;
-      messages.value = [system, ...messages.value.slice(1)];
+      if (messages.value[0]) messages.value[0] = system;
+      window.localStorage.setItem('messages', JSON.stringify(messages.value));
     }, [systemPrompt]);
+
+    subscribe(() => {
+      window.localStorage.setItem('messages', JSON.stringify(messages.value));
+    }, [messages]);
+
+    subscribe(() => {
+      window.localStorage.setItem('selectedModel', selectedModel.value);
+    }, [selectedModel]);
 
     const handleModelChange = (e: Event) => {
       const target = e.target as HTMLSelectElement;
@@ -66,7 +81,7 @@ const template = (_: Template) => {
           top: document.body.scrollHeight,
           behavior: 'smooth',
         });
-      });
+      }, 100);
     };
 
     const submitQuestion = async (message: string) => {
@@ -80,6 +95,7 @@ const template = (_: Template) => {
       if (!engine.value) return tearDown();
       systemThinking.value = true;
       messages.value = [...messages.value, { role: 'user', content: message }];
+      console.log(messages.value);
       scrollToBottom();
       const reply = await engine.value.chat.completions.create({
         messages: messages.value as ChatCompletionMessageParam[],
@@ -131,10 +147,13 @@ const template = (_: Template) => {
         },
       },
       () => {
-        _.h1({ text: '🤖', style: { textAlign: 'center' } });
+        _.h1({
+          text: '🤖',
+          style: { textAlign: 'center', fontSize: '80px', margin: '0' },
+        });
         _.p(
           {
-            style: { textAlign: 'center' },
+            style: { textAlign: 'center', padding: '0' },
           },
           () => {
             _.text(`This is an AI chatbot powered by `);
@@ -144,7 +163,14 @@ const template = (_: Template) => {
               target: '_blank',
             });
             _.text(
-              `. All models run directly in your browser, so no data is sent to the server. Larger models may struggle on some hardware. A powerful GPU is recommended. Try switching models and changing the system prompt to see how different models perform.`
+              `. All models run directly in your browser—no data is sent to a server.
+Performance depends on your hardware; larger models may struggle without a powerful GPU.
+You can switch models or change the system prompt at any time—even mid-conversation.
+You can also edit or delete messages—yours or the bot's—and see how the model adapts.`
+            );
+            _.br();
+            _.text(
+              `日本語で会話したい場合は、gemma-2-2b-jpn-it-q4f32_1-MLCがおすすめです。`
             );
           }
         );
@@ -172,7 +198,7 @@ const template = (_: Template) => {
             );
           }
         });
-        _.div({ subscribe: systemPrompt }, () => {
+        _.div({ subscribe: [systemPrompt, systemThinking, isLoading] }, () => {
           _.label({
             text: 'System Prompt',
             style: {
@@ -190,6 +216,7 @@ const template = (_: Template) => {
               value: systemPrompt.value,
               minHeight: '200px !important',
               placeholder: 'System Prompt',
+              disabled: systemThinking.value || isLoading.value,
               input: (e: Event) => {
                 const target = e.target as HTMLTextAreaElement;
                 systemPrompt.value = target.value;
@@ -216,20 +243,28 @@ const template = (_: Template) => {
               },
               () => {
                 modelIds.forEach((id) => {
-                  _.option({ id: `${id}-option`, text: id });
+                  _.option({
+                    id: `${id}-option`,
+                    text: id,
+                    value: id,
+                    selected: selectedModel.value === id,
+                  });
                 });
               }
             );
-            _.div({ subscribe: [selectedModel, isLoading] }, () => {
-              if (selectedModel.value) {
-                _.button({
-                  style: { height: '100%' },
-                  text: 'Download Model',
-                  click: getModel,
-                  disabled: isLoading.value,
-                });
+            _.div(
+              { subscribe: [selectedModel, isLoading, systemThinking] },
+              () => {
+                if (selectedModel.value) {
+                  _.button({
+                    style: { height: '100%' },
+                    text: 'Download Model',
+                    click: getModel,
+                    disabled: isLoading.value || systemThinking.value,
+                  });
+                }
               }
-            });
+            );
           }
         );
         _.div(
@@ -274,21 +309,105 @@ const template = (_: Template) => {
                     },
                   },
                   () => {
-                    messages.value.forEach((m) => {
+                    messages.value.forEach((m, i) => {
                       if (m.role === 'system') return;
-                      _.li({
-                        id: m.content,
-                        text: m.content,
-                        style: {
-                          textAlign: m.role === 'user' ? 'right' : 'left',
-                          border: '1px solid #646cff',
-                          backgroundColor:
-                            m.role === 'user' ? 'transparent' : '#646cff',
-                          color: m.role === 'user' ? 'white' : 'black',
-                          borderRadius: '4px',
-                          padding: '16px',
+                      _.li(
+                        {
+                          id: m.content,
+                          style: {
+                            border: '1px solid #646cff',
+                            backgroundColor:
+                              m.role === 'user' ? 'transparent' : '#646cff',
+                            borderRadius: '4px',
+                            padding: '4px 8px',
+                            position: 'relative',
+                          },
                         },
-                      });
+                        () => {
+                          _.span(
+                            {
+                              subscribe: systemThinking,
+                              style: {
+                                padding: '0',
+                                margin: '0',
+                                position: 'relative',
+                                top: '0',
+                                left: 'calc(100% - 8px)',
+                              },
+                            },
+                            () => {
+                              _.button({
+                                text: '✕',
+                                disabled: systemThinking.value,
+                                click: () => {
+                                  messages.value = messages.value.filter(
+                                    (_, index) => index !== i
+                                  );
+                                },
+                                style: {
+                                  padding: '0',
+                                  margin: '0',
+                                  backgroundColor: 'transparent',
+                                  border: 'none',
+                                  color: 'white',
+                                  fontSize: '16px',
+                                },
+                              });
+                            }
+                          );
+                          _.component(({ afterMounted, ref }) => {
+                            const textareaRef = ref();
+                            afterMounted(() => {
+                              setTimeout(() => {
+                                const textarea =
+                                  textareaRef() as HTMLTextAreaElement | null;
+                                if (textarea) {
+                                  textarea.style.height = 'auto !important';
+                                  textarea.style.height =
+                                    textarea.scrollHeight + 'px';
+                                }
+                              });
+                            });
+                            _.span({ subscribe: systemThinking }, () => {
+                              _.textarea(
+                                {
+                                  class: 'no-shadow',
+                                  disabled: systemThinking.value,
+                                  ref: textareaRef,
+                                  input: (e: Event) => {
+                                    const target =
+                                      e.target as HTMLTextAreaElement;
+                                    target.style.height = 'auto';
+                                    target.style.height =
+                                      target.scrollHeight + 'px';
+                                    const message = messages.value[i];
+                                    message.content = target.value;
+                                  },
+                                  style: {
+                                    type: 'text',
+                                    shadow: 'none !important',
+                                    width: '100% !important',
+                                    border: 'none !important',
+                                    height: 'auto !important',
+                                    backgroundColor: 'transparent',
+                                    color:
+                                      m.role === 'user' ? 'white' : 'black',
+                                    fontSize: '16px',
+                                    fontWeight: 'bold',
+                                    textAlign:
+                                      m.role === 'user' ? 'right' : 'left',
+                                    padding: '0',
+                                    margin: '0',
+                                  },
+                                },
+                                () => {
+                                  _.text(m.content);
+                                }
+                              );
+                            });
+                          });
+                        }
+                      );
                     });
                   }
                 );
@@ -317,6 +436,7 @@ const template = (_: Template) => {
                         const target = e.target as HTMLTextAreaElement;
                         const lastChar = target.value[target.value.length - 1];
                         if (lastChar === '\n') {
+                          target.value = target.value.slice(0, -1);
                           submitQuestion(target.value);
                         }
                       },
@@ -349,6 +469,23 @@ const template = (_: Template) => {
               }
             );
           }
+        });
+
+        _.span({ subscribe: [systemThinking, isLoading, messages] }, () => {
+          if (
+            systemThinking.value ||
+            isLoading.value ||
+            messages.value.every((m) => m.role === 'system') ||
+            engine.value === null
+          )
+            return;
+          _.button({
+            text: 'Clear Messages',
+            click: () => {
+              window.localStorage.removeItem('messages');
+              messages.value = [system];
+            },
+          });
         });
       }
     );
